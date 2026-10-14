@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Conductor</title>
+<meta name="description" content="A multi-agent orchestrator you can watch: a planner designs a team per goal, specialists run in parallel on a dependency graph, a stronger model reviews, a human approves, a lead writes the answer.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Geist:wght@400..600&family=Geist+Mono:wght@400..500&display=swap">
+<style>
+/* Layout: one dark stage. Hero line, goal composer, then the live graph beside an inspector, telemetry, the deliverable, then the design rules. Dark-first, light mirrored. */
+:root{
+  --bg:#0C0E13; --surface:#141720; --raise:#1B1F2B; --line:rgba(236,232,223,.09); --line2:rgba(236,232,223,.16);
+  --ink:#ECE8DF; --muted:#9296A6; --faint:#5E6374;
+  --brass:#D4B06A; --brass-ink:#1A1408; --brass-soft:rgba(212,176,106,.14);
+  --quick:#6CC3B2; --default:#D4B06A; --complex:#B3A4F2;
+  --ok:#7FC79C; --warn:#E6A85A; --bad:#E77A72;
+  --display:"Bricolage Grotesque", "Avenir Next", "Helvetica Neue", Arial, sans-serif;
+  --body:"Geist", "Inter", -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono:"Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme:dark;
+}
+@media (prefers-color-scheme: light){ :root:not([data-theme="dark"]){
+  --bg:#F1F0EB; --surface:#FFFFFF; --raise:#F7F6F1; --line:rgba(21,23,28,.09); --line2:rgba(21,23,28,.17);
+  --ink:#16181D; --muted:#5B5F6E; --faint:#979AA6;
+  --brass:#8A6820; --brass-ink:#FFF8E6; --brass-soft:rgba(138,104,32,.11);
+  --quick:#1D8775; --default:#8A6820; --complex:#6652C6;
+  --ok:#2D8752; --warn:#A5631A; --bad:#B6433A; color-scheme:light;
+}}
+:root[data-theme="light"]{
+  --bg:#F1F0EB; --surface:#FFFFFF; --raise:#F7F6F1; --line:rgba(21,23,28,.09); --line2:rgba(21,23,28,.17);
+  --ink:#16181D; --muted:#5B5F6E; --faint:#979AA6;
+  --brass:#8A6820; --brass-ink:#FFF8E6; --brass-soft:rgba(138,104,32,.11);
+  --quick:#1D8775; --default:#8A6820; --complex:#6652C6;
+  --ok:#2D8752; --warn:#A5631A; --bad:#B6433A; color-scheme:light;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{background:var(--bg)}
+body{margin:0;color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding-inline:20px;padding-block:0 64px}
+a{color:inherit}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--brass);outline-offset:2px;border-radius:6px}
+
+/* top bar */
+.top{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-block:22px 10px;flex-wrap:wrap}
+.who{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.who b{font-family:var(--display);font-weight:650;font-size:17px;letter-spacing:-.02em}
+.who span{color:var(--muted);font-size:13.5px}
+.pill{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);padding:6px 11px;border-radius:999px;background:var(--surface);border:1px solid var(--line)}
+.pill i{width:7px;height:7px;border-radius:50%;background:var(--faint)}
+.pill[data-mode="live"] i{background:var(--ok);box-shadow:0 0 0 4px rgba(127,199,156,.18)}
+.pill[data-mode="running"] i{background:var(--brass);animation:beat 1.1s ease-in-out infinite}
+@keyframes beat{50%{box-shadow:0 0 0 6px var(--brass-soft)}}
+
+/* hero */
+.hero{padding-block:44px 26px;display:grid;gap:22px}
+.hero h1{font-family:var(--display);font-weight:700;font-size:clamp(42px,7.4vw,98px);line-height:.93;letter-spacing:-.045em;margin:0;max-width:13ch;text-wrap:balance}
+.hero h1 em{font-style:normal;color:var(--brass)}
+.hero p{margin:0;color:var(--muted);font-size:clamp(15.5px,1.6vw,18px);max-width:62ch;text-wrap:pretty}
+
+/* composer */
+.composer{display:grid;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:16px}
+.composer label{font-family:var(--mono);font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+#goal{width:100%;resize:vertical;min-height:58px;max-height:200px;background:transparent;border:0;color:var(--ink);font-family:var(--display);font-size:clamp(18px,2.2vw,23px);font-weight:500;letter-spacing:-.015em;line-height:1.3;padding:0}
+#goal:focus{outline:none}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{border:1px solid var(--line2);background:transparent;border-radius:999px;padding:6px 12px;font-size:13px;color:var(--muted);cursor:pointer;text-align:left}
+.chip:hover{color:var(--ink);border-color:var(--brass)}
+.actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding-top:4px}
+.btn{border:1px solid var(--line2);background:var(--raise);border-radius:12px;padding:10px 16px;font-weight:550;cursor:pointer;font-size:14.5px}
+.btn:hover:not(:disabled){border-color:var(--brass)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.primary{background:var(--brass);color:var(--brass-ink);border-color:var(--brass)}
+.btn.primary:hover:not(:disabled){filter:brightness(1.07)}
+.btn.ghost{background:transparent}
+.note{color:var(--faint);font-size:13px;flex:1 1 260px;min-width:0}
+
+/* stage */
+.stage{display:grid;grid-template-columns:minmax(0,1.85fr) minmax(0,1fr);gap:14px;margin-top:14px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:18px;min-width:0}
+.graph-panel{padding:14px 14px 10px;display:grid;gap:10px;align-content:start}
+.ph{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.ph h2{margin:0;font-family:var(--display);font-weight:600;font-size:17px;letter-spacing:-.02em}
+.ph small{color:var(--faint);font-family:var(--mono);font-size:11.5px}
+.graph{overflow-x:auto;border-radius:12px;background-color:var(--bg);background-image:radial-gradient(var(--line2) 1px,transparent 1.3px);background-size:18px 18px}
+.graph-inner{position:relative}
+#edges{position:absolute;inset:0;overflow:visible}
+.edge{fill:none;stroke:var(--line2);stroke-width:1.5}
+.edge.live{stroke:var(--brass);stroke-width:2;stroke-dasharray:5 7;animation:flow .7s linear infinite}
+.edge.done{stroke:var(--brass);opacity:.45}
+@keyframes flow{to{stroke-dashoffset:-12}}
+
+.node{position:absolute;display:flex;flex-direction:column;justify-content:space-between;gap:4px;text-align:left;padding:8px 10px;border-radius:12px;background:var(--surface);border:1px solid var(--line2);cursor:pointer;transition:border-color .2s, box-shadow .2s, transform .2s}
+.node:hover{transform:translateY(-1px)}
+.node .n-role{font-weight:600;font-size:13px;line-height:1.2;letter-spacing:-.01em;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.node .n-meta{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10.5px;color:var(--faint);white-space:nowrap;overflow:hidden}
+.tier{font-style:normal;padding:1px 6px;border-radius:6px;border:1px solid currentColor;line-height:1.4}
+.t-quick{color:var(--quick)} .t-default{color:var(--default)} .t-complex{color:var(--complex)} .t-human{color:var(--ink)}
+.node.compact{padding:7px 8px}
+.node.compact .n-role{font-size:12px}
+.node.compact .n-state{display:none}
+.n-score{margin-left:auto;font-family:var(--mono);font-size:11px;font-weight:500;padding:1px 6px;border-radius:6px;background:var(--raise);color:var(--ink)}
+.node[data-sel="1"]{box-shadow:0 0 0 2px var(--brass)}
+.node[data-kind="ghost"]{border-style:dashed;background:transparent;cursor:default;color:var(--faint)}
+.node[data-state="queued"]{border-color:var(--faint)}
+.node[data-state="thinking"],.node[data-state="streaming"]{border-color:var(--brass);box-shadow:0 0 0 4px var(--brass-soft)}
+.node[data-state="thinking"]{animation:think 1.4s ease-in-out infinite}
+@keyframes think{50%{box-shadow:0 0 0 7px var(--brass-soft)}}
+.node[data-state="done"]{border-color:color-mix(in srgb,var(--ok) 55%,var(--line2))}
+.node[data-state="revise"]{border-color:var(--warn)}
+.node[data-state="error"],.node[data-state="skipped"]{border-color:var(--bad)}
+.node[data-state="waiting"]{border-color:var(--ink);box-shadow:0 0 0 4px var(--brass-soft)}
+.node[data-sel="1"][data-state]{box-shadow:0 0 0 2px var(--brass)}
+.s-done{color:var(--ok)} .s-revise{color:var(--warn)} .s-error,.s-skipped{color:var(--bad)} .s-thinking,.s-streaming,.s-waiting{color:var(--brass)}
+
+/* gate */
+.gate{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:12px 14px;border-radius:14px;background:var(--brass-soft);border:1px solid var(--brass)}
+.gate p{margin:0;flex:1 1 260px;min-width:0;font-size:14px}
+.gate b{font-family:var(--display);font-weight:650}
+
+/* telemetry */
+.tele{display:flex;flex-wrap:wrap;gap:8px 22px;align-items:flex-end;padding:4px 2px 2px}
+.tile{display:grid;gap:0;min-width:70px}
+.tile b{font-family:var(--display);font-weight:650;font-size:24px;letter-spacing:-.03em;font-variant-numeric:tabular-nums;line-height:1.1}
+.tile span{font-size:11.5px;color:var(--faint);font-family:var(--mono);letter-spacing:.02em}
+.mix{flex:1 1 160px;min-width:140px;display:grid;gap:5px}
+.mixbar{display:flex;height:8px;border-radius:99px;overflow:hidden;background:var(--raise)}
+.mixbar i{display:block;height:100%;transition:width .3s}
+.mixkey{display:flex;gap:10px;font-family:var(--mono);font-size:10.5px;color:var(--faint);flex-wrap:wrap}
+.mixkey em{font-style:normal}
+
+/* trace */
+.trace{font-family:var(--mono);font-size:11.5px;line-height:1.65;max-height:168px;overflow:auto;padding:8px 10px;background:var(--bg);border-radius:12px;color:var(--muted)}
+.trace div{display:flex;gap:10px;min-width:0}
+.trace .tt{color:var(--faint);flex:0 0 46px;font-variant-numeric:tabular-nums}
+.trace .tw{color:var(--brass);flex:0 0 128px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trace .tm{min-width:0;overflow-wrap:anywhere}
+
+/* inspector */
+.insp{padding:16px;display:flex;flex-direction:column;gap:10px;max-height:760px;min-height:420px}
+.insp-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.insp-head h3{margin:0;font-family:var(--display);font-weight:650;font-size:22px;letter-spacing:-.025em;line-height:1.1}
+.insp-sub{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-family:var(--mono);font-size:11px;color:var(--faint)}
+.follow{font-family:var(--mono);font-size:11px;border:1px solid var(--line2);border-radius:999px;padding:4px 9px;background:transparent;cursor:pointer;color:var(--muted);white-space:nowrap}
+.follow[aria-pressed="true"]{color:var(--brass);border-color:var(--brass)}
+.brief{font-size:13.5px;color:var(--muted);margin:0}
+.review{border-radius:12px;padding:10px 12px;background:var(--raise);font-size:13.5px;display:grid;gap:2px}
+.review b{font-family:var(--mono);font-size:11.5px;font-weight:500}
+.review.pass b{color:var(--ok)} .review.revise b{color:var(--warn)}
+.out{overflow:auto;min-height:0;flex:1;font-size:14px}
+.out pre{white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:0}
+.md h3,.md h4,.md h5,.md h6{font-family:var(--display);font-weight:650;letter-spacing:-.015em;margin:14px 0 6px;font-size:16px;line-height:1.25}
+.md h3:first-child,.md h4:first-child,.md h5:first-child{margin-top:0}
+.md p{margin:0 0 8px}
+.md ul,.md ol{margin:0 0 10px;padding-left:20px}
+.md li{margin:3px 0}
+.md code{font-family:var(--mono);font-size:.9em;background:var(--raise);padding:1px 5px;border-radius:5px}
+.md strong{font-weight:600;color:var(--ink)}
+.empty{color:var(--faint);font-size:13.5px}
+details.prompt summary{cursor:pointer;font-family:var(--mono);font-size:11.5px;color:var(--faint)}
+details.prompt pre{white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--mono);font-size:11px;color:var(--muted);background:var(--bg);border-radius:10px;padding:10px;max-height:260px;overflow:auto;margin:8px 0 0}
+.agents{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+.agents li{background:var(--raise);border-radius:12px;padding:10px 12px;display:grid;gap:3px;font-size:13.5px}
+.agents li b{font-weight:600}
+.agents li small{font-family:var(--mono);font-size:10.5px;color:var(--faint)}
+
+/* deliverable */
+.final{margin-top:14px;padding:clamp(18px,3vw,34px);display:grid;gap:14px}
+.final-head{display:flex;justify-content:space-between;align-items:flex-end;gap:14px;flex-wrap:wrap}
+.final-head h2{margin:0;font-family:var(--display);font-weight:700;font-size:clamp(26px,3.6vw,40px);letter-spacing:-.035em;line-height:1.02;text-wrap:balance}
+.eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--brass)}
+.final .md{font-size:15.5px;max-width:74ch}
+.final .md p:first-child{font-size:clamp(17px,1.9vw,20px);line-height:1.45}
+.final .md h3,.final .md h4,.final .md h5{font-size:19px;margin-top:22px}
+
+/* sections */
+.section{margin-top:84px;display:grid;gap:26px}
+.section h2{margin:0;font-family:var(--display);font-weight:700;font-size:clamp(32px,5vw,60px);letter-spacing:-.04em;line-height:.98;text-wrap:balance;max-width:16ch}
+.section > p{margin:0;color:var(--muted);max-width:60ch;font-size:16.5px}
+.steps{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;counter-reset:s}
+.step{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px;display:grid;gap:8px;align-content:start;min-width:0}
+.step .k{font-family:var(--mono);font-size:12px;color:var(--brass)}
+.step h3{margin:0;font-family:var(--display);font-weight:650;font-size:20px;letter-spacing:-.02em}
+.step p{margin:0;color:var(--muted);font-size:13.5px}
+.rules{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:34px 40px}
+.rule{display:grid;gap:6px;align-content:start}
+.rule .stat{font-family:var(--display);font-weight:700;font-size:clamp(34px,4vw,48px);letter-spacing:-.045em;line-height:1;color:var(--brass)}
+.rule h3{margin:6px 0 0;font-family:var(--display);font-weight:650;font-size:19px;letter-spacing:-.02em}
+.rule p{margin:0;color:var(--muted);font-size:14.5px;max-width:42ch}
+footer{margin-top:96px;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:20px}
+footer h2{margin:0;font-family:var(--display);font-weight:700;font-size:clamp(34px,5.5vw,68px);letter-spacing:-.045em;line-height:.95}
+footer h2 a{text-decoration:none;color:var(--brass)}
+footer h2 a:hover{text-decoration:underline;text-underline-offset:6px;text-decoration-thickness:2px}
+footer p{margin:0;color:var(--faint);font-size:13px;max-width:46ch}
+
+@media (max-width: 980px){
+  .stage{grid-template-columns:minmax(0,1fr)}
+  .insp{max-height:none;min-height:0}
+  .out{max-height:520px}
+  .steps{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width: 560px){
+  .wrap{padding-inline:16px}
+  .steps{grid-template-columns:minmax(0,1fr)}
+  .trace .tw{flex-basis:92px}
+  .hero{padding-block:28px 20px}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+}
+</style>
+
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="who"><b>Conductor</b><span>an open-source multi-agent orchestrator by <a href="https://besniksulmataj.com" target="_blank" rel="noopener">Besnik Sulmataj</a></span></div>
+    <span class="pill" id="pill" data-mode="replay"><i></i><span id="pillText">Recorded run</span></span>
+  </header>
+
+  <section class="hero">
+    <h1>Give it a goal. Watch a <em>team</em> form around it.</h1>
+    <p>A planner designs a different team for every goal. Specialists work in parallel along a dependency graph and hand work to each other. A reviewer on a stronger model sends weak work back once. Then it waits for your approval before it writes the answer.</p>
+  </section>
+
+  <form class="composer" id="composer">
+    <label for="goal">Goal</label>
+    <textarea id="goal" maxlength="400" rows="2"></textarea>
+    <div class="chips" id="chips"></div>
+    <div class="actions">
+      <button class="btn primary" type="submit" id="runLive">Run live</button>
+      <button class="btn" type="button" id="replay">Replay recorded run</button>
+      <button class="btn ghost" type="button" id="stop" hidden>Stop</button>
+      <span class="note" id="note">Showing a recorded run.</span>
+    </div>
+  </form>
+
+  <div class="stage">
+    <div class="panel graph-panel">
+      <div class="ph"><h2 id="missionTitle">Mission</h2><small id="graphMeta"></small></div>
+      <div class="graph" id="graph"><div class="graph-inner" id="graphInner"><svg id="edges" aria-hidden="true"></svg></div></div>
+      <div class="gate" id="gate" hidden>
+        <p id="gateText"></p>
+        <button class="btn primary" type="button" id="approve">Approve</button>
+        <button class="btn ghost" type="button" id="reject">Reject</button>
+      </div>
+      <div class="tele" id="tele"></div>
+      <div class="trace" id="trace" aria-live="off"></div>
+    </div>
+    <aside class="panel insp" id="insp" aria-live="polite"></aside>
+  </div>
+
+  <section class="panel final" id="final" hidden>
+    <div class="final-head">
+      <div style="display:grid;gap:8px;min-width:0">
+        <span class="eyebrow" id="finalEyebrow">Deliverable</span>
+        <h2 id="finalTitle"></h2>
+      </div>
+      <div class="actions" style="padding:0"><button class="btn" type="button" id="copy">Copy as Markdown</button><button class="btn ghost" type="button" id="save" hidden>Save run</button></div>
+    </div>
+    <div class="md" id="finalBody"></div>
+  </section>
+
+  <section class="section" id="how">
+    <h2>What just happened</h2>
+    <p>Five stages, each a separate call with its own prompt contract. Open any one to read the exact prompt this page sends.</p>
+    <div class="steps" id="steps"></div>
+  </section>
+
+  <section class="section">
+    <h2>Rules the systems run on</h2>
+    <p>Conductor runs four of these. The rest come from agent systems built for daily operation, where an outage or a bad send costs more than a slow answer.</p>
+    <div class="rules">
+      <div class="rule"><div class="stat">0 tokens</div><h3>Code before the model</h3><p>Memory lookups are deterministic. An index answers where a fact lives in about 5 ms, and the model reads only the one section that answers.</p></div>
+      <div class="rule"><div class="stat">2 models</div><h3>Maker and checker differ</h3><p>The agent that grades work never wrote it and runs on a different model. Here the specialists run on fast tiers and the reviewer on the most capable one.</p></div>
+      <div class="rule"><div class="stat">1 click</div><h3>Humans own the irreversible</h3><p>Anything that leaves the building passes a gate bound to the exact content approved. The demo stops for you before it writes the final answer.</p></div>
+      <div class="rule"><div class="stat">0 sends</div><h3>Readers cannot send</h3><p>An agent that reads untrusted pages, emails or reviews holds no send rights. A prompt injection then has nowhere to go.</p></div>
+      <div class="rule"><div class="stat">$0 idle</div><h3>Wake on work</h3><p>Agents sleep until a task is assigned, so an empty queue never spends a call. Local open-weight models carry bulk work at $0 per token; frontier models are spent on judgment.</p></div>
+      <div class="rule"><div class="stat">&lt;15 min</div><h3>A watchdog outside the system</h3><p>An independent process with a dead-man switch watches the orchestrator, because orchestrators fail silently.</p></div>
+      <div class="rule"><div class="stat">3 levels</div><h3>Plans are graphs, not lists</h3><p>Work that does not depend on other work starts at once. Dependencies stay shallow so one slow agent never stalls the whole team.</p></div>
+    </div>
+  </section>
+
+  <footer>
+    <h2><a href="https://github.com/sulmatajb/agent-conductor" target="_blank" rel="noopener">Read the source</a></h2>
+    <p>Live runs go through your own Anthropic API key on the local runner, or your own Claude account when the page runs inside Claude. Nothing you type leaves your machine any other way.</p>
+  </footer>
+</div>
+
+<script type="module" src="./js/app.js"></script>
+</body>
+</html>
