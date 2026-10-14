@@ -9,7 +9,8 @@
   "scripts": {
     "start": "node server.mjs",
     "test": "node --test test/*.test.mjs",
-    "dev:mock": "node scripts/mock-anthropic.mjs"
+    "dev:mock": "node scripts/mock-anthropic.mjs",
+    "build:artifact": "node scripts/build-artifact.mjs"
   },
   "engines": {
     "node": ">=20"

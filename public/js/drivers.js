@@ -3,7 +3,9 @@
 
 import { sleep } from "./orchestrator.js";
 
-// Plays back a recorded run. speed 0 renders instantly; 1 simulates thinking and streaming.
+// Plays back a recorded run. speed 0 renders instantly. Otherwise speed scales time:
+// a recording with real timings replays as a time-lapse of the original run (0.25 = four times faster),
+// and one without timings gets plausible simulated pauses.
 export function replayDriver(recording, speed = 1) {
   return {
     mode: speed ? "replay" : "instant",
@@ -11,12 +13,14 @@ export function replayDriver(recording, speed = 1) {
       const text = recording.calls?.[key];
       if (text == null) throw { code: "upstream_error", message: `The recording has no answer for "${key}".` };
       if (!speed) { await Promise.resolve(); onText(text); return { text }; }
-      await sleep(({ quick: 650, default: 1500, complex: 2400 }[tier] || 1200) * (0.7 + Math.random() * 0.6) * speed, signal);
-      let i = 0;
-      while (i < text.length) {
-        i = Math.min(text.length, i + 16 + Math.floor(Math.random() * 22));
-        onText(text.slice(0, i));
-        await sleep(26 * speed, signal);
+      const real = recording.timing?.[key];
+      const wait = real ? real.ttft * speed : ({ quick: 650, default: 1500, complex: 2400 }[tier] || 1200) * (0.7 + Math.random() * 0.6) * speed;
+      const write = real ? Math.max(200, (real.dur - real.ttft) * speed) : text.length * 1.2 * speed;
+      await sleep(wait, signal);
+      const steps = Math.max(1, Math.round(write / 33));
+      for (let s = 1; s <= steps; s++) {
+        onText(text.slice(0, Math.ceil(text.length * s / steps)));
+        if (s < steps) await sleep(write / steps, signal);
       }
       return { text };
     }

@@ -144,7 +144,7 @@ export function sleep(ms, signal) {
 /* ---------- run state ---------- */
 export function createRun(goal, mode) {
   const run = {
-    goal, mode, plan: null, nodes: {}, order: [], edges: [], trace: [], calls: {}, gateInfo: null,
+    goal, mode, plan: null, nodes: {}, order: [], edges: [], trace: [], calls: {}, timing: {}, gateInfo: null,
     t0: now(), tEnd: null, running: true,
     m: { calls: 0, tokens: 0, estimated: false, active: 0, peak: 0, revisions: 0, tiers: { quick: 0, default: 0, complex: 0 }, models: {} }
   };
@@ -183,8 +183,8 @@ export function columns(run) {
 }
 
 // A finished run, in the format the replay driver reads back.
-export function toRecording(run) {
-  return { format: 1, goal: run.goal, recordedAt: new Date().toISOString(), mode: run.mode, models: run.m.models, calls: run.calls };
+export function toRecording(run, via) {
+  return { format: 1, goal: run.goal, recordedAt: new Date().toISOString(), mode: run.mode, via: via || null, models: run.m.models, calls: run.calls, timing: run.timing };
 }
 
 /* ---------- the orchestrator ---------- */
@@ -203,11 +203,14 @@ export async function orchestrate(run, { driver, signal, hooks = {}, gate, concu
   const call = async (id, key, prompt, tier) => {
     if (sig.aborted) throw { code: "cancelled" };
     const n = run.nodes[id], t = now();
+    let first = null;
     n.prompt = prompt;
     setNode(id, { status: "thinking", text: "" });
     run.m.calls++; run.m.tiers[tier]++; run.m.active++; run.m.peak = Math.max(run.m.peak, run.m.active); metrics();
     try {
-      const res = await driver.ask({ key, prompt, tier, signal: sig, onText: text => setNode(id, { status: "streaming", text }) });
+      const res = await driver.ask({ key, prompt, tier, signal: sig, onText: text => { first ??= now(); setNode(id, { status: "streaming", text }); } });
+      // Real timings, so a replay can be a faithful time-lapse of this run.
+      run.timing[key] = { start: Math.round(t - run.t0), ttft: Math.round((first ?? now()) - t), dur: Math.round(now() - t) };
       const text = typeof res === "string" ? res : res.text;
       if (res?.usage) run.m.tokens += (res.usage.input_tokens || 0) + (res.usage.output_tokens || 0);
       else { run.m.tokens += Math.round((prompt.length + text.length) / 4); run.m.estimated = true; }

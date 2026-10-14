@@ -77,12 +77,14 @@ Override any of them in `.env`. Sonnet and Opus calls opt into Anthropic's serve
 
 ## Recordings
 
-After a live run, **Save run** writes it to `recordings/` (git-ignored). Open `/?replay=recordings/<file>.json` to replay it. To make a run the page's default, copy its `goal` and `calls` into [`public/js/recording.js`](public/js/recording.js). The run shipped there is a hand-written sample until a real one replaces it.
+Every run keeps its outputs and real per-call timings, so a replay is a faithful time-lapse of the original. After a live run on the local runner, **Save run** writes it to `recordings/` (git-ignored). Open `/?replay=recordings/<file>.json` to replay it, and add `&speed=0.4` to watch it 2.5 times faster.
+
+The run the page opens with, in [`public/js/recording.js`](public/js/recording.js), is a real live run recorded inside Claude: four agents, two sent back by the reviewer, nine model calls. To make your own run the default, copy its `goal`, `calls` and `timing` there.
 
 ## Other ways to host it
 
 - **Static hosting** (GitHub Pages, any file host): publish `public/`. The page detects there is no runner and offers replay only.
-- **Inside Claude**: when the page runs as a claude.ai artifact, it uses the viewer's own Claude account through `window.claude`, with no key and no server.
+- **Inside Claude**: `npm run build:artifact` bundles everything into `dist/conductor.html`. Published as a claude.ai artifact, it runs live on the viewer's own Claude account through `window.claude`, with no key and no server. **Copy run** exports the finished run as JSON.
 
 ## Tests
 
@@ -90,7 +92,7 @@ After a live run, **Save run** writes it to `recordings/` (git-ignored). Open `/
 npm test
 ```
 
-Thirteen tests cover the scheduler (dependency order, parallelism, the concurrency cap), plan sanitizing, the revision rule, the gate, failure and cancellation, recording round trips, and a full run through the real runner and SDK against a mock API, including model routing, fallbacks, and the runner's guards.
+Fourteen tests cover the scheduler (dependency order, parallelism, the concurrency cap), plan sanitizing, the revision rule, the gate, failure and cancellation, recording round trips and timings, and a full run through the real runner and SDK against a mock API, including model routing, fallbacks, and the runner's guards.
 
 ## Layout
 
@@ -100,7 +102,8 @@ public/index.html          the page
 public/js/orchestrator.js  the pipeline, prompts, plan sanitizing (no DOM)
 public/js/drivers.js       replay, local runner, claude.ai
 public/js/app.js           graph, inspector, telemetry, gate UI
-public/js/recording.js     the default recorded run and preset goals
+public/js/recording.js     the default recorded run (a real one) and preset goals
+scripts/build-artifact.mjs single-file build for claude.ai
 scripts/mock-anthropic.mjs scripted stand-in API for tests and npm run dev:mock
 test/                      node:test suites
 ```

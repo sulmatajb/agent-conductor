@@ -133,7 +133,20 @@ test("the default recording replays end to end, and a run round-trips as a recor
   const run = createRun(DEFAULT_RECORDING.goal, "instant");
   const out = await orchestrate(run, { driver: replayDriver(DEFAULT_RECORDING, 0), gate: async () => "auto" });
   assert.equal(out, DEFAULT_RECORDING.calls.synth);
-  assert.equal(run.m.revisions, 1);
+  assert.equal(run.m.revisions, Object.keys(DEFAULT_RECORDING.calls).filter(k => k.endsWith(":rev")).length);
   const again = createRun(DEFAULT_RECORDING.goal, "instant");
   assert.equal(await orchestrate(again, { driver: replayDriver(toRecording(run), 0) }), out);
+});
+
+test("recordings carry real per-call timings for a faithful time-lapse", async () => {
+  const d = fakeDriver({ planner: JSON.stringify(PLAN), critic: reviews([]), synth: "ok" }, { delay: 20 });
+  const run = createRun("goal", "fake");
+  await orchestrate(run, { driver: d });
+  const rec = toRecording(run, "test");
+  assert.equal(rec.via, "test");
+  for (const key of Object.keys(rec.calls)) {
+    const t = rec.timing[key];
+    assert.ok(t && t.dur >= 15 && t.ttft <= t.dur && t.start >= 0, key);
+  }
+  assert.ok(rec.timing.c.start >= rec.timing.a.start + rec.timing.a.dur - 2, "c started after a finished");
 });

@@ -7,6 +7,8 @@ import { md, esc } from "./markdown.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const params = new URLSearchParams(location.search);
+const SPEED = Math.min(4, Math.max(0.05, Number(params.get("speed")) || 1));
+const MANUAL_GATE = params.get("gate") === "manual";
 
 let run = null, ctl = null, recording = DEFAULT_RECORDING;
 let selected = null, follow = true, gateResolve = null;
@@ -203,9 +205,10 @@ function paintFinal() {
     if (!["thinking", "streaming", "done"].includes(s.status)) return;
     $("#final").hidden = false;
     $("#finalTitle").textContent = run.plan.title;
-    $("#finalEyebrow").textContent = run.mode === "live" ? "Deliverable · written live" : "Deliverable · recorded run";
+    $("#finalEyebrow").textContent = run.mode === "live" ? "Deliverable · written live" : recording.mode === "live" ? "Deliverable · from a live run" : "Deliverable · recorded run";
     $("#finalBody").innerHTML = s.text ? md(s.text) : `<p class="empty">The lead writer is assembling the team's work...</p>`;
     $("#save").hidden = !(s.status === "done" && run.mode === "live" && live?.kind === "server");
+    $("#copyRun").hidden = !(s.status === "done" && run.mode === "live" && live?.kind !== "server");
   });
 }
 
@@ -232,7 +235,7 @@ function gateFor(mode) {
     $("#gateText").innerHTML = `<b>Your call.</b> ${info.passed} of ${info.total} contributions passed review${info.revised ? `, ${info.revised} more after one revision` : ""}. Approve to write the deliverable.`;
     $("#gate").hidden = false;
     gateResolve = v => { $("#gate").hidden = true; gateResolve = null; resolve(v); };
-    if (mode === "replay") setTimeout(() => gateResolve?.("auto"), 2600);
+    if (mode === "replay" && !MANUAL_GATE) setTimeout(() => gateResolve?.("auto"), 2600);
     else $("#approve").focus({ preventScroll: true });
   });
 }
@@ -246,7 +249,8 @@ $("#chips").addEventListener("click", e => { const b = e.target.closest(".chip")
 function setRunning(on, mode) {
   runBtn.disabled = on || !live; replayBtn.disabled = on; stopBtn.hidden = !on;
   pill.dataset.mode = on ? "running" : (live ? "live" : "replay");
-  pillText.textContent = on ? (mode === "live" ? "Running live" : "Replaying") : (live ? live.label : "Recorded run");
+  const replayLabel = recording.mode === "live" ? "Replay of a live run" : "Replaying";
+  pillText.textContent = on ? (mode === "live" ? "Running live" : replayLabel) : (live ? live.label : (recording.mode === "live" ? "Recorded live run" : "Recorded run"));
 }
 
 function errorCopy(e) {
@@ -279,7 +283,7 @@ async function start(mode) {
   if (mode !== "instant") $("#final").hidden = true;
   renderGraph(); paintInspector(); paintTele(); paintTrace();
 
-  const driver = isLive ? live.driver : replayDriver(recording, mode === "instant" ? 0 : 1);
+  const driver = isLive ? live.driver : replayDriver(recording, mode === "instant" ? 0 : SPEED);
   setRunning(mode !== "instant", isLive ? "live" : "replay");
   if (isLive) noteEl.textContent = live.kind === "server" ? "Running on your API key through the local runner." : "Running on your Claude account. The first call may ask you to allow it.";
   try {
@@ -310,12 +314,22 @@ $("#copy").addEventListener("click", async () => {
 $("#save").addEventListener("click", async () => {
   const b = $("#save");
   try {
-    const res = await fetch("/api/recordings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(toRecording(run)) });
+    const res = await fetch("/api/recordings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(toRecording(run, live?.kind)) });
     const j = await res.json();
     if (!res.ok) throw j.error;
     b.textContent = "Saved"; noteEl.textContent = `Saved to ${j.path}. Replay it with ?replay=${j.path}`;
   } catch (e) { b.textContent = "Save failed"; noteEl.textContent = e?.message || "Could not save the run."; }
   setTimeout(() => { b.textContent = "Save run"; }, 2400);
+});
+
+$("#copyRun").addEventListener("click", async () => {
+  const b = $("#copyRun"), json = JSON.stringify(toRecording(run, live?.kind));
+  try { await navigator.clipboard.writeText(json); b.textContent = "Run copied"; noteEl.textContent = "The run is on your clipboard as JSON. Save it under recordings/ to replay it."; }
+  catch {
+    const ta = $("#runJson"); ta.hidden = false; ta.value = json; ta.select();
+    b.textContent = "Select and copy below";
+  }
+  setTimeout(() => { b.textContent = "Copy run"; }, 2400);
 });
 
 /* ---------- how it works ---------- */
@@ -344,6 +358,9 @@ async function detectLive() {
   } catch { /* static hosting: replay only */ }
   return null;
 }
+
+// Read-only handle for scripted video capture (scripts/record.mjs); absent unless ?capture=1.
+if (params.get("capture") === "1") window.__conductor = { get run() { return run; }, start: mode => start(mode) };
 
 async function boot() {
   const rp = params.get("replay");
