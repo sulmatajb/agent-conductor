@@ -67,7 +67,7 @@ function renderGraph() {
     }
     const p = pos[id];
     Object.assign(el.style, { left: p.x + "px", top: p.y + "px", width: p.w + "px", height: p.h + "px" });
-    el.classList.toggle("compact", p.w < 132);
+    el.classList.toggle("compact", p.w < 150);
     paintNode(id);
   }
   svg.innerHTML = "";
