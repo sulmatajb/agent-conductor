@@ -4,3 +4,6 @@ node_modules/
 recordings/*
 !recordings/.gitkeep
 dist/
+
+# The film ships with the repo (overrides a global *.mp4 ignore)
+!media/*.mp4
