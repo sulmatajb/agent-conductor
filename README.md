@@ -4,6 +4,10 @@ A multi-agent orchestrator you can watch. Give it a goal and a planner designs a
 
 Every step is visible: the graph, each agent's streamed output, the exact prompt it received, the reviewer's scores, token counts and which model answered.
 
+[![Conductor on a real goal: a planner builds a team of four, two agents run in parallel, the reviewer sends two back, and the run waits for a human to approve](media/conductor-preview.gif)](media/conductor.mp4)
+
+A real run, recorded inside Claude and shown 2.5 times faster. [Watch the 42-second film](media/conductor.mp4).
+
 ```mermaid
 flowchart LR
   G([Goal]) --> PL[Planner<br/>default tier]
@@ -106,6 +110,7 @@ public/js/recording.js     the default recorded run (a real one) and preset goal
 scripts/build-artifact.mjs single-file build for claude.ai
 scripts/mock-anthropic.mjs scripted stand-in API for tests and npm run dev:mock
 test/                      node:test suites
+media/                     the film and its preview
 ```
 
 ## License
